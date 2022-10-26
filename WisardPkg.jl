@@ -1,18 +1,18 @@
 module WisardPkg
-using StatsBase, Serialization
+using StatsBase, Serialization, Images,Plots
 
 struct Wisard
-    input_size::Int
+    input_size::Vector{Int}
     tuple_size::Int
     bleaching::Bool
     arch
     
 
-    Wisard(isize::Int, tsize::Int, classes::Vector, bleaching = false) = begin
+    Wisard(isize::Vector{Int}, tsize::Int, classes::Vector, bleaching = false) = begin
         d = Dict(
             class => Dict{Vector{Int}, Dict{Vector{Bool}, Int}}(
                     tuple => Dict{Vector{Bool}, Int}() 
-                    for tuple in generatearchtecture(isize, tsize)
+                    for tuple in generatearchtecture(isize[1]*isize[2], tsize)
                 )
             for class in classes
         )
@@ -65,7 +65,8 @@ function predict(model::Wisard, input_data::Vector)
     output = []
     classes = collect(keys(model.arch))
     csize = length(classes)
-    n_rams = div(model.input_size, model.tuple_size) + 1
+    isize = model.input_size[1] * model.input_size[2]
+    n_rams = div(isize, model.tuple_size) + 1
 
     for sample in input_data
         score = zeros(csize)
@@ -87,7 +88,7 @@ function predict(model::Wisard, input_data::Vector)
                 
                 (max_val, max_idx) = findmax(score)
                 if (sum([x >= max_val for x in score]) == 1) | (sum([x > 0 for x in score]) == 0) 
-                    print(max_val, "\n")
+                    # print(max_val, "\n")
                     push!(output, classes[max_idx])
                     break
                 else
@@ -144,6 +145,9 @@ function use(filename::String)
     return deserialize(filename)
 end
 
+function tomatrix(data::Vector)
+    return permutedims(hcat(data...))
+end
 
 function generatearchtecture(isize::Int, tsize::Int)
     a = collect(1:isize)
@@ -167,8 +171,44 @@ function generatearchtecture(isize::Int, tsize::Int)
     return c
 end
 
-function flatten(input::Vector)
+function getmentalimages(model::Wisard)
+    classes = collect(keys(model.arch))
+    max = 0
+    imgs = Dict()
+    for class in classes
+        output = zeros(Int, model.input_size[1] * model.input_size[2])
+        tuples = collect(keys(model.arch[class]))
+
+        for tuple in tuples
+            vals = model.arch[class][tuple]
+            rams = collect(keys(vals))
+            a = zeros(length(tuple))
+            for ram in rams
+                a += ram*vals[ram]
+            end
+            
+            for (idx, val) in zip(tuple, a)
+                output[idx] =  output[idx] + val
+            end
+        end
+        max = maximum(output)
+
+
+        imgs[class] = WisardPkg.inflate(model.input_size, output)/max
+    end
+    return imgs
+end
+
+function plot(data::Matrix, palette = :grays)
+    return heatmap(data, c = palette)
+end
+
+function flatten(input::Matrix)
     return collect(Iterators.flatten(input))
+end
+
+function inflate(shape::Vector{Int}, data::Vector{Int})
+    return reshape(data, shape...)
 end
 end # module
 
